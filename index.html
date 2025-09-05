@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CTCTECH™ Sinais – LIVE</title>
+  <meta name="theme-color" content="#0b0f1a" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body { background: #0b0f1a; color: #e6edf3; }
+    .glass { background: rgba(255,255,255,0.04); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.06); }
+    input, select { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-md mx-auto p-4 space-y-4">
+    <header class="flex items-center justify-between">
+      <div class="text-xl font-bold">CTCTECH™ Sinais</div>
+      <div class="px-2 py-1 text-xs rounded-full glass">IA • Neural ATIVA</div>
+    </header>
+
+    <section class="glass rounded-2xl p-3">
+      <div class="text-sm text-gray-300 mb-2">Plataforma, Ativo e Tempo</div>
+      <div class="flex items-center gap-2">
+        <input id="platform" list="plataformas" placeholder="Ex.: Casa Trade, Broker10, IQ, MT5, Binance" class="w-40" />
+        <datalist id="plataformas">
+          <option>Casa Trade</option><option>Broker10</option><option>Quotex</option><option>IQ Option</option>
+          <option>MT5</option><option>MT4</option><option>Binance</option><option>Bybit</option>
+        </datalist>
+        <input id="symbol" list="ativos" placeholder="Ex.: EUR/USD, BTC/USDT, NAS100" class="flex-1" />
+        <datalist id="ativos"></datalist>
+        <select id="tf">
+          <option value="auto">Auto (IA)</option>
+          <option>15s</option><option>30s</option>
+          <option>1m</option><option>2m</option><option>3m</option>
+          <option>5m</option><option>15m</option><option>30m</option>
+          <option>1h</option><option>4h</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="glass rounded-2xl p-4 space-y-3">
+      <div class="text-sm text-gray-300">Sinal Gerado</div>
+      <div id="card" class="rounded-xl p-4 border border-white/10 bg-black/30">
+        <div class="flex items-center justify-between">
+          <div class="text-base font-semibold" id="op">Aguardando...</div>
+          <div class="text-xs px-2 py-1 rounded-full bg-white/10" id="strength">—</div>
+        </div>
+        <div class="grid grid-cols-4 gap-2 mt-3 text-sm">
+          <div class="glass rounded-lg p-2"><div class="text-gray-400 text-xs">Plataforma</div><div id="plat">—</div></div>
+          <div class="glass rounded-lg p-2"><div class="text-gray-400 text-xs">Ativo</div><div id="atv">—</div></div>
+          <div class="glass rounded-lg p-2"><div class="text-gray-400 text-xs">Tempo</div><div id="tfv">—</div></div>
+          <div class="glass rounded-lg p-2"><div class="text-gray-400 text-xs">Confiança</div><div id="conf">—</div></div>
+        </div>
+        <div class="mt-3 text-xs text-gray-400" id="explain">—</div>
+        <div class="mt-2 text-xs text-gray-300">⏱️ <b>Entrada:</b> <u>Abertura do próximo candle</u> (1m: primeiros 3–5s)</div>
+        <button id="btn-entry" class="mt-3 w-full py-3 rounded-xl font-semibold transition glass hover:bg-white/10" title="Lembrete para executar manualmente (não envia ordem)">
+          Fazer Entrada
+        </button>
+      </div>
+      <div class="flex gap-2">
+        <button id="btn-live" class="flex-1 py-3 rounded-xl font-semibold bg-white/10 hover:bg-white/20 transition">Gerar Sinal</button>
+        <button id="btn-auto" class="px-4 rounded-xl border border-white/20 text-sm">Auto • 15s</button>
+      </div>
+      <div class="text-xs text-gray-400 space-y-1">
+        <div>• <b>Fazer Entrada</b> = lembrete (não envia ordem automática).</div>
+        <div>• <b>Aguardando</b> = sem confluência de EMA + Fibonacci + candle de força.</div>
+        <div>• Autoexecução: <b>desligada</b> (quando ativarmos, aparecerá aqui).</div>
+      </div>
+    </section>
+
+    <footer class="text-center text-xs text-gray-500 pt-2">EMA + Fibonacci • Compra/Venda • LIVE • Multi-plataforma</footer>
+  </div>
+
+<script>
+let auto = false, autoTimer = null;
+
+async function loadAssets() {
+  try {
+    const r = await fetch("/assets_all.json");
+    const list = await r.json();
+    const dl = document.getElementById("ativos");
+    list.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      dl.appendChild(opt);
+    });
+  } catch (e) { console.warn("Sem lista de ativos local", e); }
+}
+
+function updateCard(data) {
+  document.getElementById("op").textContent = data.operation || "Aguardando";
+  document.getElementById("strength").textContent = data.strength || "—";
+  document.getElementById("plat").textContent = data.platform || "—";
+  document.getElementById("atv").textContent = data.symbol || "—";
+  document.getElementById("tfv").textContent = data.timeframe || "—";
+  document.getElementById("conf").textContent = (data.confidence ? data.confidence + "%" : "—");
+  const exp = data.explain || {};
+  document.getElementById("explain").textContent = exp.reason || "—";
+}
+
+async function getSignalLive() {
+  const platform = (document.getElementById("platform").value || "").trim();
+  const symbol = (document.getElementById("symbol").value || "").replace("/", "");
+  const tf = document.getElementById("tf").value;
+  if (!platform) { alert("Informe a PLATAFORMA (ex.: Casa Trade)"); return; }
+  if (!symbol) { alert("Informe o ATIVO (ex.: EUR/USD)"); return; }
+  try {
+    const r = await fetch("/api/signal", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({platform, symbol, timeframe: tf})
+    });
+    const data = await r.json();
+    updateCard(data);
+    if (data.operation === "Compra" || data.operation === "Venda") {
+      try { navigator.vibrate && navigator.vibrate(200); } catch(e){}
+      const audio = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAIA+AAABAAgAZGF0YQAAAAA=");
+      audio.play().catch(()=>{});
+    }
+  } catch (e) { console.error(e); }
+}
+
+document.getElementById("btn-live").addEventListener("click", getSignalLive);
+document.getElementById("btn-auto").addEventListener("click", () => {
+  auto = !auto;
+  document.getElementById("btn-auto").textContent = auto ? "Auto • ON" : "Auto • 15s";
+  if (auto) autoTimer = setInterval(getSignalLive, 15000);
+  else clearInterval(autoTimer);
+});
+document.getElementById("btn-entry").addEventListener("click", () => {
+  alert("Execute na sua plataforma na Abertura do próximo candle (1m: 3–5s). Este botão não envia ordem automática.");
+});
+
+loadAssets();
+</script>
+</body>
+</html>
